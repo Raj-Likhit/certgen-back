@@ -1,40 +1,17 @@
 import os
 import sys
-from fastapi import FastAPI
 
-# Add project root to sys.path for backend imports
+# Add project root to sys.path
 root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root_path)
+sys.path.insert(0, root_path)
 
-try:
-    # Import the actual app (app is at root level, not in backend/)
-    from app.main import app
-except Exception as e:
-    # Fallback to a diagnostic app if the main app crashes or can't be imported
-    app = FastAPI()
-    
-    @app.get("/debug-paths")
-    async def debug_paths():
-        import traceback
-        return {
-            "status": "Import Error Recovery",
-            "error_message": str(e),
-            "traceback": traceback.format_exc(),
-            "root_path": root_path,
-            "cwd": os.getcwd(),
-            "sys_path": sys.path,
-            "folders_at_root": os.listdir(root_path) if os.path.exists(root_path) else "Path does not exist",
-            "env_vars": {
-                "VERCEL": os.getenv("VERCEL"),
-                "SUPABASE_URL_PRESENT": bool(os.getenv("SUPABASE_URL")),
-                "PYTHONPATH": os.getenv("PYTHONPATH")
-            }
-        }
+# Import the FastAPI app
+from app.main import app
 
-    @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
-    async def catch_all(full_path: str):
-        return {
-            "error": "The main application failed to load. Please check /debug-paths for details.",
-            "error_detail": str(e),
-            "requested_path": full_path
-        }
+# Vercel Python runtime expects 'app' or 'handler'
+# FastAPI app works directly with ASGI servers
+# For Vercel, we don't need to wrap it - just export the app
+# The app is already defined above
+
+# This makes the FastAPI app available to Vercel's Python runtime
+application = app
