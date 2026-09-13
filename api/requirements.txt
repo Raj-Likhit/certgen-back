@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+supabase
+pydantic
+pydantic-settings
+slowapi
+Pillow
+python-multipart
+PyJWT
+qrcode
+
