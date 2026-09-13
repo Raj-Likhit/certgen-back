@@ -7,13 +7,13 @@ root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root_path)
 
 try:
-    # Attempt to load the actual app
-    from backend.app.main import app
+    # Import the actual app (app is at root level, not in backend/)
+    from app.main import app
 except Exception as e:
     # Fallback to a diagnostic app if the main app crashes or can't be imported
     app = FastAPI()
     
-    @app.get("/api/debug-paths")
+    @app.get("/debug-paths")
     async def debug_paths():
         import traceback
         return {
@@ -31,10 +31,10 @@ except Exception as e:
             }
         }
 
-    @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
+    @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
     async def catch_all(full_path: str):
         return {
-            "error": "The main application failed to load. Please check /api/debug-paths for details.",
+            "error": "The main application failed to load. Please check /debug-paths for details.",
             "error_detail": str(e),
             "requested_path": full_path
         }
