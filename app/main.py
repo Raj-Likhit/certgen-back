@@ -27,19 +27,17 @@ from .core.limiter import limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS Configuration - Support Development and Vercel Previews
+# CORS Configuration - Split deployment setup
 allowed_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "https://certgenerator-alpha.vercel.app"
+    "http://localhost:5173",  # Local development
+    "https://certgen-front.vercel.app",  # Production frontend
+    "https://certgen-front-*.vercel.app",  # Preview deployments
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https?://.*",  # Support preview and production deployments
+    allow_origin_regex=r"^https://certgen-front.*\.vercel\.app$",  # All frontend preview deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
