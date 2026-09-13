@@ -66,9 +66,8 @@ async def startup_event():
         logger.error(f"FATAL: Asset initialization failed: {str(e)}")
         # We don't raise here so the app can start and we can use the debug endpoint
 
-# Routes (both with and without /api prefix for maximum deployment flexibility)
+# Routes - For Vercel serverless deployment, mount at root
 app.include_router(router)
-app.include_router(router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn
