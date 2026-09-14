@@ -30,14 +30,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS Configuration - Split deployment setup
 allowed_origins = [
     "http://localhost:5173",  # Local development
-    "https://certgen-front.vercel.app",  # Production frontend
-    "https://certgen-front-*.vercel.app",  # Preview deployments
+    "https://certgen-front.vercel.app",  # Production frontend (old)
+    "https://sih2026-mecs-cert.vercel.app",  # Production frontend (new)
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https://certgen-front.*\.vercel\.app$",  # All frontend preview deployments
+    allow_origin_regex=r"^https://(certgen-front|sih2026-mecs-cert).*\.vercel\.app$",  # All frontend preview deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
