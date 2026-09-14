@@ -10,3 +10,5 @@ python-multipart
 PyJWT
 qrcode
 httpx
+reportlab
+requests
