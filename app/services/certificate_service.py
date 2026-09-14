@@ -313,6 +313,80 @@ def get_pil_font(family, size, weight='Regular', is_italic=False):
     except:
         return ImageFont.load_default()
 
+def generate_certificate_png(name, cfg):
+    """Generate PNG certificate with name overlay using PIL"""
+    template_data = get_template_bytes()
+    if not template_data:
+        return None, "Template not found"
+    
+    try:
+        # Load template image
+        img = Image.open(io.BytesIO(template_data))
+        draw = ImageDraw.Draw(img)
+        
+        # Get config
+        name_pos = cfg.get('name_pos', {'x': img.width/2, 'y': img.height/2})
+        font_fam = cfg.get('font_family', 'Helvetica')
+        text_color = cfg.get('text_color', '#000000')
+        font_size = cfg.get('font_size', 48) or 48
+        weight = cfg.get('font_weight', 'Regular')
+        is_italic = cfg.get('is_italic', False)
+        is_centered = cfg.get('is_centered', False)
+        stroke_w = cfg.get('stroke_width', 0)
+        stroke_c = cfg.get('stroke_color', '#000000')
+        
+        # Get PIL font
+        pil_font = get_pil_font(font_fam, font_size, weight, is_italic)
+        
+        # Get text bbox for positioning calculations
+        # Use anchor='ls' (left-baseline) to match PDF baseline positioning
+        x = name_pos['x']
+        
+        # In PDF: name_y_raw_px is from top, then converted to bottom for ReportLab
+        # For PIL with top-origin, we use name_pos['y'] directly
+        # BUT: PIL's draw.text with anchor='lt' starts at TOP of text
+        # We need anchor='ls' (left-baseline) or anchor='la' (left-ascender) to match PDF
+        y_from_top_px = name_pos['y']
+        
+        # PIL anchor='ls' means: x,y point to left edge of baseline
+        # This matches what PDF does (baseline positioning)
+        anchor = 'ls'  # left-baseline
+        
+        if is_centered:
+            anchor = 'ms'  # middle-baseline for centered text
+        
+        # Convert hex colors to RGB
+        rgb_color = hex_to_rgb(text_color)
+        
+        # Draw text with stroke if needed
+        if stroke_w > 0:
+            stroke_rgb = hex_to_rgb(stroke_c)
+            # Draw stroke by offsetting in all directions
+            for offset_x in range(-stroke_w, stroke_w + 1):
+                for offset_y in range(-stroke_w, stroke_w + 1):
+                    if offset_x != 0 or offset_y != 0:
+                        draw.text(
+                            (x + offset_x, y_from_top_px + offset_y), 
+                            name, 
+                            font=pil_font, 
+                            fill=stroke_rgb,
+                            anchor=anchor
+                        )
+        
+        # Draw main text with baseline anchor
+        draw.text((x, y_from_top_px), name, font=pil_font, fill=rgb_color, anchor=anchor)
+        
+        # Save to buffer
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG', optimize=True)
+        buffer.seek(0)
+        
+        return buffer, None
+        
+    except Exception as e:
+        logger.error(f"PNG generation error: {str(e)}")
+        return None, str(e)
+
 def generate_certificate_pdf(template_bytes_io, name, cfg, base_url="https://certgen.io"):
     # --- Background Loading ---
     template_data = get_template_bytes()
@@ -538,23 +612,47 @@ async def process_claim(name: str, frontend_url: str, supabase: Any):
         def render_pdf_job():
             tio = io.BytesIO(template_io.getvalue())
             return generate_certificate_pdf(tio, name, cfg, base_url)
+        
+        def render_png_job():
+            return generate_certificate_png(name, cfg)
             
         async with RENDER_SEMAPHORE:
+            # Generate both PDF and PNG in parallel
             pdf_task = loop.run_in_executor(None, render_pdf_job)
+            png_task = loop.run_in_executor(None, render_png_job)
+            
             pdf_buffer = await pdf_task
+            png_result = await png_task
+            
+            if png_result[1]:  # Error in PNG generation
+                logger.error(f"PNG generation failed: {png_result[1]}")
+                png_buffer = None
+            else:
+                png_buffer = png_result[0]
         
         def upload_f(fname, data, ctype):
              supabase.storage.from_("certificates").upload(path=fname, file=data, file_options={"content-type": ctype, "upsert": "true"})
              return supabase.storage.from_("certificates").get_public_url(fname)
 
         async with STORAGE_SEMAPHORE:
-            fname = f"{uuid.uuid4()}.pdf"
-            pdf_fut = loop.run_in_executor(None, upload_f, fname, pdf_buffer.getvalue(), "application/pdf")
+            base_filename = str(uuid.uuid4())
+            
+            # Upload PDF
+            pdf_fname = f"{base_filename}.pdf"
+            pdf_fut = loop.run_in_executor(None, upload_f, pdf_fname, pdf_buffer.getvalue(), "application/pdf")
             pdf_public_url = await pdf_fut
+            
+            # Upload PNG if generated successfully
+            png_public_url = None
+            if png_buffer:
+                png_fname = f"{base_filename}.png"
+                png_fut = loop.run_in_executor(None, upload_f, png_fname, png_buffer.getvalue(), "image/png")
+                png_public_url = await png_fut
         
-        logger.info(f"Successfully processed claim for {name}")
+        logger.info(f"Successfully processed claim for {name} (PDF + PNG)")
         return {
             "cert_url": pdf_public_url,
+            "cert_png_url": png_public_url,
             "name": name
         }, None
 
