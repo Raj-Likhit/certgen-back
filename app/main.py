@@ -37,10 +37,14 @@ allowed_origins = [
     "https://sih2026-mecs-cert.vercel.app",  # Production frontend (new)
 ]
 
+frontend_env_url = os.getenv("FRONTEND_URL")
+if frontend_env_url and frontend_env_url not in allowed_origins:
+    allowed_origins.append(frontend_env_url.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https://(certgen-front|sih2026-mecs-cert).*\.vercel\.app$",  # All frontend preview deployments
+    allow_origin_regex=r"^https://.*\.vercel\.app$",  # All frontend Vercel deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
