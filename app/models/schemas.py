@@ -25,6 +25,8 @@ class LoginRequest(BaseModel):
     password: str
 
 class ParticipantRow(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
     team_lead_name: Optional[str] = None
     team_member_1_name: Optional[str] = None
     team_member_2_name: Optional[str] = None
@@ -33,6 +35,7 @@ class ParticipantRow(BaseModel):
     team_member_5_name: Optional[str] = None
 
 class BatchImportRequest(BaseModel):
+    table_name: Optional[str] = "AWS SCD"
     teams: Optional[List[ParticipantRow]] = None
     participants: Optional[List[ParticipantRow]] = None
 

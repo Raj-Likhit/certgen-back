@@ -222,15 +222,38 @@ async def get_teams():
         raise handle_db_error(e)
 
 
+@router.get("/admin/aws-scd", dependencies=[Depends(verify_jwt)])
+async def get_aws_scd_participants():
+    try:
+        res = supabase.table("AWS SCD").select("*").execute()
+        return res.data
+    except Exception as e:
+        raise handle_db_error(e)
+
 @router.get("/participants/names")
 async def get_all_participant_names():
     try:
-        res = supabase.table("Teams").select("*").execute()
         names = set()
-        for row in res.data:
-            for k, v in row.items():
-                if k != "id" and v and isinstance(v, str) and v.strip():
+        # 1. Fetch from AWS SCD event table
+        try:
+            scd_res = supabase.table("AWS SCD").select('"Name"').execute()
+            for row in scd_res.data or []:
+                v = row.get("Name")
+                if v and isinstance(v, str) and v.strip():
                     names.add(v.strip())
+        except Exception as e:
+            logger.warning(f"Error fetching from AWS SCD: {e}")
+
+        # 2. Fetch from Teams table
+        try:
+            res = supabase.table("Teams").select("*").execute()
+            for row in res.data or []:
+                for k, v in row.items():
+                    if k != "id" and v and isinstance(v, str) and v.strip():
+                        names.add(v.strip())
+        except Exception as e:
+            logger.warning(f"Error fetching from Teams: {e}")
+
         return sorted(list(names))
     except Exception as e:
         raise handle_db_error(e)
@@ -254,13 +277,15 @@ async def claim_certificate(req: schemas.ClaimRequest, request: Request):
         raise
     except Exception as e:
         raise handle_db_error(e)
+
 @router.post("/admin/batch-import", dependencies=[Depends(verify_jwt)])
 async def batch_import_participants(req: schemas.BatchImportRequest):
     try:
         items = req.teams or req.participants or []
-        results = await service.process_batch_import(items, supabase)
+        target_table = req.table_name or "AWS SCD"
+        results = await service.process_batch_import(items, supabase, target_table)
         return {
-            "summary": f"Processed {len(results)} records", 
+            "summary": f"Processed {len(results)} records into {target_table}", 
             "details": results,
             "success_count": len([r for r in results if r['status'] == 'success']),
             "error_count": len([r for r in results if r['status'] == 'error'])

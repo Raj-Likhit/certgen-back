@@ -30,6 +30,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS Configuration - Split deployment setup
 allowed_origins = [
     "http://localhost:5173",  # Local development
+    "http://localhost:5174",  # Local development (fallback port)
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
     "https://certgen-front.vercel.app",  # Production frontend (old)
     "https://sih2026-mecs-cert.vercel.app",  # Production frontend (new)
 ]

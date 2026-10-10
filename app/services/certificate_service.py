@@ -567,28 +567,42 @@ async def process_claim(name: str, frontend_url: str, supabase: Any):
     name = name.strip()
     logger.info(f"Processing claim for name: {name}")
     
-    res = supabase.table("Teams").select("*").execute()
-    
     matched_name = None
     target_clean = name.strip().lower()
-    
-    cols = [
-        "Team Lead Name", 
-        "Team Member 1 Name", 
-        "Team Member 2 Name", 
-        "Team Member 3 Name", 
-        "Team Member 4 Name", 
-        "Team Member 5 Name"
-    ]
-    
-    for row in res.data or []:
-        for col in cols:
-            val = row.get(col)
+
+    # 1. Check AWS SCD event table (Name, Email)
+    try:
+        scd_res = supabase.table("AWS SCD").select('"Name", "Email"').execute()
+        for row in scd_res.data or []:
+            val = row.get("Name")
             if val and isinstance(val, str) and val.strip().lower() == target_clean:
                 matched_name = val.strip()
                 break
-        if matched_name:
-            break
+    except Exception as e:
+        logger.warning(f"Error querying 'AWS SCD' table: {e}")
+
+    # 2. Check Teams table if not found
+    if not matched_name:
+        try:
+            res = supabase.table("Teams").select("*").execute()
+            cols = [
+                "Team Lead Name", 
+                "Team Member 1 Name", 
+                "Team Member 2 Name", 
+                "Team Member 3 Name", 
+                "Team Member 4 Name", 
+                "Team Member 5 Name"
+            ]
+            for row in res.data or []:
+                for col in cols:
+                    val = row.get(col)
+                    if val and isinstance(val, str) and val.strip().lower() == target_clean:
+                        matched_name = val.strip()
+                        break
+                if matched_name:
+                    break
+        except Exception as e:
+            logger.warning(f"Error querying 'Teams' table: {e}")
             
     if not matched_name:
         logger.warning(f"Claim failed: No participant found for {name}")
@@ -660,43 +674,46 @@ async def process_claim(name: str, frontend_url: str, supabase: Any):
         logger.error(f"Claim generation error for {name}: {str(e)}")
         return None, str(e)
 
-async def process_batch_import(teams: list, supabase: Any):
+async def process_batch_import(teams: list, supabase: Any, table_name: str = "AWS SCD"):
     import asyncio
     sem = asyncio.Semaphore(5)
     
-    try:
-        supabase.table("Teams").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    except Exception:
-        pass
-        
     async def process_t(t):
         async with sem:
             try:
                 loop = asyncio.get_event_loop()
                 def db_op():
+                    name = t.get("name") if isinstance(t, dict) else getattr(t, "name", None)
+                    email = t.get("email") if isinstance(t, dict) else getattr(t, "email", None)
                     lead = t.get("team_lead_name") if isinstance(t, dict) else getattr(t, "team_lead_name", None)
-                    m1 = t.get("team_member_1_name") if isinstance(t, dict) else getattr(t, "team_member_1_name", None)
-                    m2 = t.get("team_member_2_name") if isinstance(t, dict) else getattr(t, "team_member_2_name", None)
-                    m3 = t.get("team_member_3_name") if isinstance(t, dict) else getattr(t, "team_member_3_name", None)
-                    m4 = t.get("team_member_4_name") if isinstance(t, dict) else getattr(t, "team_member_4_name", None)
-                    m5 = t.get("team_member_5_name") if isinstance(t, dict) else getattr(t, "team_member_5_name", None)
                     
-                    data = {
-                        "Team Lead Name": lead,
-                        "Team Member 1 Name": m1,
-                        "Team Member 2 Name": m2,
-                        "Team Member 3 Name": m3,
-                        "Team Member 4 Name": m4,
-                        "Team Member 5 Name": m5,
-                    }
-                    supabase.table("Teams").insert(data).execute()
-                await loop.run_in_executor(None, db_op)
-                lead_name = t.get("team_lead_name") if isinstance(t, dict) else getattr(t, "team_lead_name", None)
-                return {"name": lead_name, "status": "success"}
+                    if name or (email and not lead):
+                        data = {"Name": name, "Email": email}
+                        supabase.table("AWS SCD").insert(data).execute()
+                        return name or email
+                    else:
+                        m1 = t.get("team_member_1_name") if isinstance(t, dict) else getattr(t, "team_member_1_name", None)
+                        m2 = t.get("team_member_2_name") if isinstance(t, dict) else getattr(t, "team_member_2_name", None)
+                        m3 = t.get("team_member_3_name") if isinstance(t, dict) else getattr(t, "team_member_3_name", None)
+                        m4 = t.get("team_member_4_name") if isinstance(t, dict) else getattr(t, "team_member_4_name", None)
+                        m5 = t.get("team_member_5_name") if isinstance(t, dict) else getattr(t, "team_member_5_name", None)
+                        
+                        data = {
+                            "Team Lead Name": lead,
+                            "Team Member 1 Name": m1,
+                            "Team Member 2 Name": m2,
+                            "Team Member 3 Name": m3,
+                            "Team Member 4 Name": m4,
+                            "Team Member 5 Name": m5,
+                        }
+                        supabase.table("Teams").insert(data).execute()
+                        return lead
+                imported_identifier = await loop.run_in_executor(None, db_op)
+                return {"name": imported_identifier, "status": "success"}
             except Exception as e:
                 logger.error(f"Batch import error: {str(e)}")
-                lead_name = t.get("team_lead_name") if isinstance(t, dict) else getattr(t, "team_lead_name", None)
-                return {"name": lead_name, "status": "error", "error": str(e)}
+                entry_name = t.get("name") or t.get("team_lead_name") if isinstance(t, dict) else getattr(t, "name", getattr(t, "team_lead_name", "Unknown"))
+                return {"name": entry_name, "status": "error", "error": str(e)}
 
     results = await asyncio.gather(*(process_t(t) for t in teams))
     return results
